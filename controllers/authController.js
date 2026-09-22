@@ -9,35 +9,29 @@ async function login(req, res) {
   try {
     const { email, phone, password } = req.body || {};
 
-    if (!password) {
+    if (!password || !password.toString().trim()) {
       return res.status(400).json({ success: false, message: 'Password is required.' });
     }
 
-    if (!phone && !email) {
+    const inputQuery = (email || phone || '').toString().trim();
+    if (!inputQuery) {
       return res.status(400).json({ success: false, message: 'Email or phone number is required.' });
     }
 
-    const cleanEmail = email ? email.trim().toLowerCase() : '';
-    const cleanPhone = phone ? phone.trim() : '';
-
+    const lowerInput = inputQuery.toLowerCase();
     const db = await getDb();
 
-    let user = null;
-    if (cleanPhone) {
-      user = await db.get('SELECT * FROM users WHERE TRIM(phone) = ?', [cleanPhone]);
-    } else if (cleanEmail) {
-      user = await db.get('SELECT * FROM users WHERE LOWER(TRIM(email)) = ?', [cleanEmail]);
-    }
+    // Query user by email OR phone number flexibly
+    const user = await db.get(
+      `SELECT * FROM users WHERE LOWER(TRIM(email)) = ? OR TRIM(phone) = ? OR LOWER(TRIM(email)) = ?`,
+      [lowerInput, inputQuery, lowerInput]
+    );
 
     if (!user) {
       return res.status(401).json({ success: false, message: 'Invalid credentials. Account not found.' });
     }
 
-    if (cleanPhone && user.role !== 'student' && user.role !== 'admin') {
-      return res.status(403).json({ success: false, message: 'Access denied.' });
-    }
-
-    const isMatch = await bcrypt.compare(password.trim(), user.password);
+    const isMatch = await bcrypt.compare(password.toString().trim(), user.password);
     if (!isMatch) {
       return res.status(401).json({ success: false, message: 'Incorrect password.' });
     }
@@ -59,8 +53,6 @@ async function login(req, res) {
         role: user.role
       }
     });
-
-    return res.status(400).json({ success: false, message: 'Email or phone number is required.' });
   } catch (err) {
     console.error('Login Error:', err);
     return res.status(500).json({ success: false, message: 'Internal server error' });
