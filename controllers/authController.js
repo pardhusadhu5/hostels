@@ -17,73 +17,48 @@ async function login(req, res) {
       return res.status(400).json({ success: false, message: 'Email or phone number is required.' });
     }
 
+    const cleanEmail = email ? email.trim().toLowerCase() : '';
+    const cleanPhone = phone ? phone.trim() : '';
+
     const db = await getDb();
 
-    // Student login (uses phone)
-    if (phone) {
-      const user = await db.get('SELECT * FROM users WHERE phone = ?', [phone]);
-      if (!user) {
-        return res.status(401).json({ success: false, message: 'Student account not found.' });
-      }
-
-      if (user.role !== 'student') {
-        return res.status(403).json({ success: false, message: 'Access denied. Account is not a student.' });
-      }
-
-      const isMatch = await bcrypt.compare(password, user.password);
-      if (!isMatch) {
-        return res.status(401).json({ success: false, message: 'Incorrect password.' });
-      }
-
-      const token = jwt.sign(
-        { id: user.id, name: user.name, email: user.email, role: user.role },
-        JWT_SECRET,
-        { expiresIn: '24h' }
-      );
-
-      return res.status(200).json({
-        success: true,
-        message: 'Login successful',
-        token,
-        user: {
-          id: user.id,
-          name: user.name,
-          email: user.email,
-          role: user.role
-        }
-      });
+    let user = null;
+    if (cleanPhone) {
+      user = await db.get('SELECT * FROM users WHERE TRIM(phone) = ?', [cleanPhone]);
+    } else if (cleanEmail) {
+      user = await db.get('SELECT * FROM users WHERE LOWER(TRIM(email)) = ?', [cleanEmail]);
     }
 
-    // Admin / Manager login (uses email)
-    if (email) {
-      const user = await db.get('SELECT * FROM users WHERE email = ?', [email]);
-      if (!user) {
-        return res.status(401).json({ success: false, message: 'Invalid email or password.' });
-      }
-
-      const isMatch = await bcrypt.compare(password, user.password);
-      if (!isMatch) {
-        return res.status(401).json({ success: false, message: 'Invalid email or password.' });
-      }
-
-      const token = jwt.sign(
-        { id: user.id, name: user.name, email: user.email, role: user.role },
-        JWT_SECRET,
-        { expiresIn: '24h' }
-      );
-
-      return res.status(200).json({
-        success: true,
-        message: 'Login successful',
-        token,
-        user: {
-          id: user.id,
-          name: user.name,
-          email: user.email,
-          role: user.role
-        }
-      });
+    if (!user) {
+      return res.status(401).json({ success: false, message: 'Invalid credentials. Account not found.' });
     }
+
+    if (cleanPhone && user.role !== 'student' && user.role !== 'admin') {
+      return res.status(403).json({ success: false, message: 'Access denied.' });
+    }
+
+    const isMatch = await bcrypt.compare(password.trim(), user.password);
+    if (!isMatch) {
+      return res.status(401).json({ success: false, message: 'Incorrect password.' });
+    }
+
+    const token = jwt.sign(
+      { id: user.id, name: user.name, email: user.email, role: user.role },
+      JWT_SECRET,
+      { expiresIn: '24h' }
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: 'Login successful',
+      token,
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role
+      }
+    });
 
     return res.status(400).json({ success: false, message: 'Email or phone number is required.' });
   } catch (err) {
