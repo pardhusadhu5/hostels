@@ -37,28 +37,53 @@ app.use('/api/reports', reportRoutes);
 app.use('/api/reminders', reminderRoutes);
 app.use('/api/notifications', notificationRoutes);
 
-// Fallback HTML router for single page application routing if requested
+// Explicit 404 JSON handler for unmatched API routes
+app.use('/api', (req, res) => {
+  res.status(404).json({
+    success: false,
+    message: 'API endpoint not found.'
+  });
+});
+
+// Fallback HTML router for single page application routing for non-API routes
 app.use((req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-// Start DB and Express Server
+// Global Error Handling Middleware - Guarantees valid JSON response for any server error
+app.use((err, req, res, next) => {
+  console.error('Unhandled Global Server Error:', err);
+  res.status(err.status || 500).json({
+    success: false,
+    message: err.message || 'Internal server error'
+  });
+});
+
+// Start DB and Express Server (only when run directly)
 async function startServer() {
   try {
     console.log('Connecting to database...');
     await getDb();
     console.log('Database initialized successfully.');
 
-    app.listen(PORT, () => {
-      console.log(`====================================================`);
-      console.log(`Akshaya Deluxe Hostel Management Server Active`);
-      console.log(`URL: http://localhost:${PORT}`);
-      console.log(`====================================================`);
-    });
+    if (process.env.NODE_ENV !== 'test') {
+      app.listen(PORT, () => {
+        console.log(`====================================================`);
+        console.log(`Akshaya Deluxe Hostel Management Server Active`);
+        console.log(`URL: http://localhost:${PORT}`);
+        console.log(`====================================================`);
+      });
+    }
   } catch (err) {
     console.error('Fatal: Server Failed to Start:', err);
-    process.exit(1);
+    if (require.main === module) {
+      process.exit(1);
+    }
   }
 }
 
-startServer();
+if (require.main === module) {
+  startServer();
+}
+
+module.exports = app;

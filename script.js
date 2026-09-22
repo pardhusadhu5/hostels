@@ -1,3 +1,64 @@
+// ==========================================
+// GLOBAL SAFE FETCH UTILITY FOR FRONTEND
+// ==========================================
+window.safeFetch = async function(url, options = {}) {
+  const API_BASE = (window.location.protocol === 'file:') ? 'http://localhost:8080' : '';
+  let targetUrl = url;
+  if (typeof url === 'string' && url.startsWith('/api/')) {
+    targetUrl = API_BASE + url;
+  }
+
+  try {
+    const response = await fetch(targetUrl, options);
+    const text = await response.text();
+
+    if (!text || !text.trim()) {
+      return {
+        ok: response.ok,
+        status: response.status,
+        data: {
+          success: false,
+          message: response.ok ? 'Server returned an empty response.' : `Server error (${response.status})`
+        }
+      };
+    }
+
+    try {
+      const data = JSON.parse(text);
+      return {
+        ok: response.ok,
+        status: response.status,
+        data: (typeof data === 'object' && data !== null)
+          ? data
+          : { success: false, message: 'Invalid JSON payload received from server.' }
+      };
+    } catch (parseErr) {
+      console.error('Non-JSON response received:', text);
+      const cleanText = text.replace(/<[^>]*>?/gm, '').substring(0, 80).trim();
+      return {
+        ok: false,
+        status: response.status,
+        data: {
+          success: false,
+          message: response.ok
+            ? 'Unexpected response format from server.'
+            : `Server error (${response.status}): ${cleanText || 'Internal error'}`
+        }
+      };
+    }
+  } catch (networkErr) {
+    console.error('Network/Connection error:', networkErr);
+    return {
+      ok: false,
+      status: 0,
+      data: {
+        success: false,
+        message: 'Unable to connect to server. Please check your network connection or server status.'
+      }
+    };
+  }
+};
+
 document.addEventListener('DOMContentLoaded', () => {
 
   // ==========================================

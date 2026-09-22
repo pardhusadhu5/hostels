@@ -58,6 +58,19 @@
       color: var(--primary-deep);
       text-decoration: underline;
     }
+    .alert-banner {
+      display: none;
+      padding: 12px 16px;
+      margin-bottom: 20px;
+      border-radius: var(--radius-md);
+      background: #fee2e2;
+      border: 1px solid #fca5a5;
+      color: #991b1b;
+      font-size: 0.9rem;
+      font-weight: 500;
+      align-items: center;
+      gap: 10px;
+    }
     @media (max-width: 767px) {
       .auth-section {
         padding-top: 80px;
@@ -108,6 +121,12 @@
           <h2>Admin Console</h2>
           <p>Sign in to manage Akshaya Deluxe admissions & staff</p>
         </div>
+
+        <!-- Inline Error Banner -->
+        <div id="authAlert" class="alert-banner">
+          <i data-lucide="alert-circle" style="width: 18px; height: 18px; flex-shrink: 0;"></i>
+          <span id="authAlertMsg"></span>
+        </div>
         
         <form id="adminLoginForm">
           <div class="form-group">
@@ -122,7 +141,7 @@
           
           <a href="forgot-password.html" class="forgot-link" style="display: block; text-align: right; font-size: 0.85rem; color: var(--primary-brand); margin-top: -12px; margin-bottom: 24px; font-weight: 500; text-decoration: none;">Forgot Password?</a>
           
-          <button type="submit" class="btn btn-primary" style="width: 100%;">Access Admin Dashboard</button>
+          <button type="submit" id="submitBtn" class="btn btn-primary" style="width: 100%;">Access Admin Dashboard</button>
         </form>
         
         <div class="auth-actions-footer">
@@ -141,56 +160,130 @@
 
   <script src="script.js"></script>
   <script>
-    (function() {
-      const originalFetch = window.fetch;
+    async function safeFetch(url, options = {}) {
       const API_BASE = (window.location.protocol === 'file:') ? 'http://localhost:8080' : '';
-      window.fetch = function(input, init) {
-        if (typeof input === 'string' && input.startsWith('/api/')) {
-          input = API_BASE + input;
+      let targetUrl = url;
+      if (typeof url === 'string' && url.startsWith('/api/')) {
+        targetUrl = API_BASE + url;
+      }
+
+      try {
+        const response = await fetch(targetUrl, options);
+        const text = await response.text();
+
+        if (!text || !text.trim()) {
+          return {
+            ok: response.ok,
+            status: response.status,
+            data: {
+              success: false,
+              message: response.ok ? 'Server returned an empty response.' : `Server error (${response.status})`
+            }
+          };
         }
-        return originalFetch(input, init);
-      };
-    })();
+
+        try {
+          const data = JSON.parse(text);
+          return {
+            ok: response.ok,
+            status: response.status,
+            data: (typeof data === 'object' && data !== null)
+              ? data
+              : { success: false, message: 'Invalid JSON payload received from server.' }
+          };
+        } catch (parseErr) {
+          console.error('Non-JSON response received:', text);
+          const cleanText = text.replace(/<[^>]*>?/gm, '').substring(0, 80).trim();
+          return {
+            ok: false,
+            status: response.status,
+            data: {
+              success: false,
+              message: response.ok
+                ? 'Unexpected response format from server.'
+                : `Server error (${response.status}): ${cleanText || 'Internal error'}`
+            }
+          };
+        }
+      } catch (networkErr) {
+        console.error('Network/Connection error:', networkErr);
+        return {
+          ok: false,
+          status: 0,
+          data: {
+            success: false,
+            message: 'Unable to connect to server. Please check your network connection or server status.'
+          }
+        };
+      }
+    }
 
     const form = document.getElementById('adminLoginForm');
+    const alertBox = document.getElementById('authAlert');
+    const alertMsg = document.getElementById('authAlertMsg');
+
+    function showError(msg) {
+      if (alertBox && alertMsg) {
+        alertMsg.textContent = msg;
+        alertBox.style.display = 'flex';
+        if (typeof lucide !== 'undefined') lucide.createIcons();
+      }
+    }
+
+    function hideError() {
+      if (alertBox) alertBox.style.display = 'none';
+    }
+
     if (form) {
       form.addEventListener('submit', async (e) => {
         e.preventDefault();
-        const email = document.getElementById('adminEmail').value;
-        const password = document.getElementById('adminPass').value;
-        const submitBtn = form.querySelector('button[type="submit"]');
-        const originalText = submitBtn.innerText;
+        hideError();
+
+        const emailInput = document.getElementById('adminEmail');
+        const passInput = document.getElementById('adminPass');
+        const email = emailInput ? emailInput.value.trim() : '';
+        const password = passInput ? passInput.value : '';
+        const submitBtn = document.getElementById('submitBtn') || form.querySelector('button[type="submit"]');
+        const originalText = submitBtn.innerHTML;
+
+        if (!email || !password) {
+          showError('Please enter both Email and Password.');
+          return;
+        }
 
         try {
           submitBtn.disabled = true;
-          submitBtn.innerText = 'Signing In...';
+          if (emailInput) emailInput.disabled = true;
+          if (passInput) passInput.disabled = true;
+          submitBtn.innerHTML = '<span class="loader-spinner" style="width:16px; height:16px; border-width:2px; display:inline-block; margin-right:8px; vertical-align:middle;"></span> Signing In...';
 
-          const response = await fetch('/api/auth/login', {
+          const res = await safeFetch('/api/auth/login', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ email, password })
           });
 
-          const data = await response.json();
-
-          if (data.success) {
-            localStorage.setItem('token', data.token);
-            localStorage.setItem('user', JSON.stringify(data.user));
+          if (res.data && res.data.success) {
+            localStorage.setItem('token', res.data.token);
+            localStorage.setItem('user', JSON.stringify(res.data.user));
             
-            if (data.user.role === 'admin' || data.user.role === 'manager') {
+            if (res.data.user && (res.data.user.role === 'admin' || res.data.user.role === 'manager')) {
               window.location.href = 'admin/dashboard.html';
             } else {
               window.location.href = 'index.html';
             }
           } else {
-            alert(data.message || 'Login failed. Invalid credentials.');
+            const errorMsg = (res.data && res.data.message) ? res.data.message : 'Invalid credentials';
+            showError(errorMsg);
           }
         } catch (err) {
-          console.error('Error:', err);
-          alert('Connection Error: ' + err.message);
+          console.error('Login submit error:', err);
+          showError('An unexpected error occurred. Please try again.');
         } finally {
           submitBtn.disabled = false;
-          submitBtn.innerText = originalText;
+          if (emailInput) emailInput.disabled = false;
+          if (passInput) passInput.disabled = false;
+          submitBtn.innerHTML = originalText;
         }
       });
     }

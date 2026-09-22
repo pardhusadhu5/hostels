@@ -7,14 +7,23 @@ const { JWT_SECRET } = require('../middleware/authMiddleware');
 
 async function login(req, res) {
   try {
-    const { email, phone, password } = req.body;
+    const { email, phone, password } = req.body || {};
+
+    if (!password) {
+      return res.status(400).json({ success: false, message: 'Password is required.' });
+    }
+
+    if (!phone && !email) {
+      return res.status(400).json({ success: false, message: 'Email or phone number is required.' });
+    }
+
     const db = await getDb();
 
     // Student login (uses phone)
     if (phone) {
       const user = await db.get('SELECT * FROM users WHERE phone = ?', [phone]);
       if (!user) {
-        return res.status(404).json({ success: false, message: 'Student account not found.' });
+        return res.status(401).json({ success: false, message: 'Student account not found.' });
       }
 
       if (user.role !== 'student') {
@@ -34,6 +43,7 @@ async function login(req, res) {
 
       return res.status(200).json({
         success: true,
+        message: 'Login successful',
         token,
         user: {
           id: user.id,
@@ -64,6 +74,7 @@ async function login(req, res) {
 
       return res.status(200).json({
         success: true,
+        message: 'Login successful',
         token,
         user: {
           id: user.id,
@@ -77,7 +88,7 @@ async function login(req, res) {
     return res.status(400).json({ success: false, message: 'Email or phone number is required.' });
   } catch (err) {
     console.error('Login Error:', err);
-    res.status(500).json({ success: false, message: 'Internal server error' });
+    return res.status(500).json({ success: false, message: 'Internal server error' });
   }
 }
 
